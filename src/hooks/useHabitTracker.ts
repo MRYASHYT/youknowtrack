@@ -1,18 +1,34 @@
 import { useState, useEffect, useCallback } from "react";
-import { weeklyData } from "@/data/weeklyData";
+import { weeklyData, Task } from "@/data/weeklyData";
 
-const STORAGE_KEY = "mext-habit-tracker";
+const STORAGE_KEY = "mext-habit-tracker-v2";
 const STREAK_KEY = "mext-streak";
 const LAST_ACTIVITY_KEY = "mext-last-activity";
+const NOTES_KEY = "mext-notes";
+
+export interface DailyTasks {
+  [taskId: string]: boolean[]; // Array of 7 booleans for each day
+}
+
+export interface WeekNotes {
+  wentWell: string;
+  challenges: string;
+  improvements: string;
+}
 
 interface StoredData {
-  completedTasks: Record<number, string[]>;
+  dailyTasks: Record<number, DailyTasks>;
   currentWeek: number;
+}
+
+interface NotesData {
+  [weekNumber: number]: WeekNotes;
 }
 
 export const useHabitTracker = () => {
   const [currentWeek, setCurrentWeek] = useState(1);
-  const [completedTasks, setCompletedTasks] = useState<Record<number, Set<string>>>({});
+  const [dailyTasks, setDailyTasks] = useState<Record<number, DailyTasks>>({});
+  const [notes, setNotes] = useState<NotesData>({});
   const [streak, setStreak] = useState(0);
 
   // Load data from localStorage
@@ -22,15 +38,18 @@ export const useHabitTracker = () => {
       try {
         const data: StoredData = JSON.parse(stored);
         setCurrentWeek(data.currentWeek || 1);
-        
-        // Convert arrays back to Sets
-        const tasksMap: Record<number, Set<string>> = {};
-        Object.entries(data.completedTasks || {}).forEach(([week, tasks]) => {
-          tasksMap[parseInt(week)] = new Set(tasks as string[]);
-        });
-        setCompletedTasks(tasksMap);
+        setDailyTasks(data.dailyTasks || {});
       } catch (e) {
         console.error("Failed to parse stored data:", e);
+      }
+    }
+
+    const storedNotes = localStorage.getItem(NOTES_KEY);
+    if (storedNotes) {
+      try {
+        setNotes(JSON.parse(storedNotes));
+      } catch (e) {
+        console.error("Failed to parse notes:", e);
       }
     }
 
@@ -54,28 +73,27 @@ export const useHabitTracker = () => {
 
   // Save to localStorage
   useEffect(() => {
-    const tasksToStore: Record<number, string[]> = {};
-    Object.entries(completedTasks).forEach(([week, tasks]) => {
-      tasksToStore[parseInt(week)] = Array.from(tasks);
-    });
-
     const data: StoredData = {
-      completedTasks: tasksToStore,
+      dailyTasks,
       currentWeek,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  }, [completedTasks, currentWeek]);
+  }, [dailyTasks, currentWeek]);
 
-  const toggleTask = useCallback((weekNumber: number, taskId: string) => {
-    setCompletedTasks(prev => {
-      const weekTasks = new Set(prev[weekNumber] || []);
-      
-      if (weekTasks.has(taskId)) {
-        weekTasks.delete(taskId);
-      } else {
-        weekTasks.add(taskId);
-        
-        // Update streak
+  useEffect(() => {
+    localStorage.setItem(NOTES_KEY, JSON.stringify(notes));
+  }, [notes]);
+
+  const toggleDailyTask = useCallback((weekNumber: number, taskId: string, dayIndex: number) => {
+    setDailyTasks(prev => {
+      const existingWeekTasks = prev[weekNumber];
+      const weekTasks = existingWeekTasks ? { ...existingWeekTasks } : {};
+      const taskDays = [...(weekTasks[taskId] || [false, false, false, false, false, false, false])];
+      taskDays[dayIndex] = !taskDays[dayIndex];
+      weekTasks[taskId] = taskDays;
+
+      // Update streak on checking a task
+      if (taskDays[dayIndex]) {
         const today = new Date().toISOString().split('T')[0];
         const lastActivity = localStorage.getItem(LAST_ACTIVITY_KEY);
         
@@ -87,14 +105,30 @@ export const useHabitTracker = () => {
           localStorage.setItem(LAST_ACTIVITY_KEY, today);
         }
       }
-      
+
       return { ...prev, [weekNumber]: weekTasks };
     });
   }, []);
 
-  const getWeekCompletedTasks = useCallback((weekNumber: number) => {
-    return completedTasks[weekNumber] || new Set<string>();
-  }, [completedTasks]);
+  const getWeekDailyTasks = useCallback((weekNumber: number): DailyTasks => {
+    return dailyTasks[weekNumber] || {};
+  }, [dailyTasks]);
+
+  const getTaskCompletionForWeek = useCallback((weekNumber: number, tasks: Task[]) => {
+    const weekDailyTasks = dailyTasks[weekNumber] || {};
+    let completed = 0;
+    let total = 0;
+
+    tasks.forEach(task => {
+      const days = weekDailyTasks[task.id] || [false, false, false, false, false, false, false];
+      // Count how many days are checked
+      const checkedDays = days.filter(Boolean).length;
+      completed += checkedDays;
+      total += 7; // Each task has 7 days
+    });
+
+    return { completed, total, percentage: total > 0 ? (completed / total) * 100 : 0 };
+  }, [dailyTasks]);
 
   const calculateOverallProgress = useCallback(() => {
     let totalTasks = 0;
@@ -102,22 +136,64 @@ export const useHabitTracker = () => {
 
     weeklyData.forEach(week => {
       const weekTasks = [...week.japanese, ...week.aiml, ...week.college, ...week.goals];
-      totalTasks += weekTasks.length;
-      const weekCompleted = completedTasks[week.weekNumber] || new Set();
-      completedCount += weekTasks.filter(t => weekCompleted.has(t.id)).length;
+      const weekDailyTasks = dailyTasks[week.weekNumber] || {};
+      
+      weekTasks.forEach(task => {
+        const days = weekDailyTasks[task.id] || [false, false, false, false, false, false, false];
+        completedCount += days.filter(Boolean).length;
+        totalTasks += 7;
+      });
     });
 
     return totalTasks > 0 ? (completedCount / totalTasks) * 100 : 0;
-  }, [completedTasks]);
+  }, [dailyTasks]);
+
+  const getWeekNotes = useCallback((weekNumber: number): WeekNotes => {
+    const weekNotes = notes[weekNumber];
+    return weekNotes ? weekNotes : { wentWell: '', challenges: '', improvements: '' };
+  }, [notes]);
+
+  const updateWeekNotes = useCallback((weekNumber: number, newNotes: Partial<WeekNotes>) => {
+    setNotes(prev => ({
+      ...prev,
+      [weekNumber]: { ...prev[weekNumber], ...newNotes }
+    }));
+  }, []);
+
+  const getWeeksCompleted = useCallback(() => {
+    let count = 0;
+    weeklyData.forEach(week => {
+      const weekTasks = [...week.japanese, ...week.aiml, ...week.college, ...week.goals];
+      const weekDailyTasks = dailyTasks[week.weekNumber] || {};
+      let weekTotal = 0;
+      let weekCompleted = 0;
+      
+      weekTasks.forEach(task => {
+        const days = weekDailyTasks[task.id] || [false, false, false, false, false, false, false];
+        weekCompleted += days.filter(Boolean).length;
+        weekTotal += 7;
+      });
+
+      if (weekTotal > 0 && (weekCompleted / weekTotal) >= 0.5) {
+        count++;
+      }
+    });
+    return count;
+  }, [dailyTasks]);
 
   return {
     currentWeek,
     setCurrentWeek,
-    toggleTask,
-    getWeekCompletedTasks,
+    toggleDailyTask,
+    getWeekDailyTasks,
+    getTaskCompletionForWeek,
     calculateOverallProgress,
+    getWeekNotes,
+    updateWeekNotes,
+    getWeeksCompleted,
     streak,
     totalWeeks: weeklyData.length,
     weekData: weeklyData[currentWeek - 1],
+    allWeeks: weeklyData,
   };
 };
