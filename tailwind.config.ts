@@ -47,6 +47,22 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        japanese: {
+          DEFAULT: "hsl(var(--japanese))",
+          muted: "hsl(var(--japanese-muted))",
+        },
+        aiml: {
+          DEFAULT: "hsl(var(--aiml))",
+          muted: "hsl(var(--aiml-muted))",
+        },
+        college: {
+          DEFAULT: "hsl(var(--college))",
+          muted: "hsl(var(--college-muted))",
+        },
+        goals: {
+          DEFAULT: "hsl(var(--goals))",
+          muted: "hsl(var(--goals-muted))",
+        },
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",
           foreground: "hsl(var(--sidebar-foreground))",
@@ -65,20 +81,12 @@ export default {
       },
       keyframes: {
         "accordion-down": {
-          from: {
-            height: "0",
-          },
-          to: {
-            height: "var(--radix-accordion-content-height)",
-          },
+          from: { height: "0" },
+          to: { height: "var(--radix-accordion-content-height)" },
         },
         "accordion-up": {
-          from: {
-            height: "var(--radix-accordion-content-height)",
-          },
-          to: {
-            height: "0",
-          },
+          from: { height: "var(--radix-accordion-content-height)" },
+          to: { height: "0" },
         },
       },
       animation: {
