@@ -1,0 +1,4 @@
+project_id = "fkmmhdmjuffnahuhvmmv"
+
+[functions.schedule-assistant]
+verify_jwt = false

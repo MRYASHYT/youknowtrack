@@ -6,10 +6,11 @@ import { Sidebar } from "@/components/Sidebar";
 import { Notes } from "@/components/Notes";
 import { WeekSummary } from "@/components/WeekSummary";
 import { WeekSelector } from "@/components/WeekSelector";
+import { Chatbot } from "@/components/Chatbot";
 import { Plane, Sparkles, BookOpen, Brain, GraduationCap, Target } from "lucide-react";
 import { jsPDF } from "jspdf";
 import { toast } from "@/hooks/use-toast";
-
+import { Task } from "@/data/weeklyData";
 const Index = () => {
   const {
     currentWeek,
@@ -21,10 +22,20 @@ const Index = () => {
     getWeekNotes,
     updateWeekNotes,
     getWeeksCompleted,
+    addCustomTask,
+    removeTask,
     streak,
     totalWeeks,
     weekData,
   } = useHabitTracker();
+
+  const handleAddTask = (category: string, task: Task) => {
+    addCustomTask(currentWeek, category, task);
+  };
+
+  const handleRemoveTask = (category: string, taskId: string) => {
+    removeTask(currentWeek, taskId);
+  };
 
   useTheme(); // Initialize theme
 
@@ -162,6 +173,13 @@ const Index = () => {
           <p>頑張って! (Ganbatte!) — Good luck on your MEXT journey!</p>
         </footer>
       </div>
+
+      {/* AI Chatbot */}
+      <Chatbot 
+        weekData={weekData}
+        onAddTask={handleAddTask}
+        onRemoveTask={handleRemoveTask}
+      />
     </div>
   );
 };
