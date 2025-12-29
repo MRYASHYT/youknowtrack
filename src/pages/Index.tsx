@@ -1,51 +1,90 @@
 import { useHabitTracker } from "@/hooks/useHabitTracker";
+import { useTheme } from "@/hooks/useTheme";
 import { WeekHeader } from "@/components/WeekHeader";
-import { CategorySection } from "@/components/CategorySection";
-import { ProgressDashboard } from "@/components/ProgressDashboard";
-import { ResourceLinks } from "@/components/ResourceLinks";
+import { DailyTaskGrid } from "@/components/DailyTaskGrid";
+import { Sidebar } from "@/components/Sidebar";
+import { Notes } from "@/components/Notes";
+import { WeekSummary } from "@/components/WeekSummary";
 import { WeekSelector } from "@/components/WeekSelector";
-import { Plane, Sparkles } from "lucide-react";
+import { Plane, Sparkles, BookOpen, Brain, GraduationCap, Target } from "lucide-react";
+import { jsPDF } from "jspdf";
+import { toast } from "@/hooks/use-toast";
 
 const Index = () => {
   const {
     currentWeek,
     setCurrentWeek,
-    toggleTask,
-    getWeekCompletedTasks,
+    toggleDailyTask,
+    getWeekDailyTasks,
+    getTaskCompletionForWeek,
     calculateOverallProgress,
+    getWeekNotes,
+    updateWeekNotes,
+    getWeeksCompleted,
     streak,
     totalWeeks,
     weekData,
   } = useHabitTracker();
 
-  const completedTasks = getWeekCompletedTasks(currentWeek);
+  useTheme(); // Initialize theme
+
+  const dailyTasks = getWeekDailyTasks(currentWeek);
   const overallProgress = calculateOverallProgress();
+  const weekNotes = getWeekNotes(currentWeek);
 
   if (!weekData) return null;
 
+  const allTasks = [...weekData.japanese, ...weekData.aiml, ...weekData.college, ...weekData.goals];
+  const weekProgress = getTaskCompletionForWeek(currentWeek, allTasks).percentage;
+
+  const handleDownloadPDF = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(18);
+    doc.text(`MEXT Journey - Week ${weekData.weekNumber}`, 20, 20);
+    doc.setFontSize(12);
+    doc.text(`${weekData.startDate} - ${weekData.endDate}, ${weekData.year}`, 20, 30);
+    doc.text(`Phase: ${weekData.phase} | Focus: ${weekData.focus}`, 20, 40);
+    
+    let y = 55;
+    const sections = [
+      { title: 'Japanese Learning', tasks: weekData.japanese },
+      { title: 'AI/ML Work', tasks: weekData.aiml },
+      { title: 'College Work', tasks: weekData.college },
+      { title: 'Weekly Goals', tasks: weekData.goals },
+    ];
+
+    sections.forEach(section => {
+      doc.setFontSize(14);
+      doc.text(section.title, 20, y);
+      y += 8;
+      doc.setFontSize(10);
+      section.tasks.forEach(task => {
+        const taskDays = dailyTasks[task.id] || [false, false, false, false, false, false, false];
+        const completed = taskDays.filter(Boolean).length;
+        doc.text(`☐ ${task.text} (${completed}/7 days)`, 25, y);
+        y += 6;
+        if (y > 270) { doc.addPage(); y = 20; }
+      });
+      y += 5;
+    });
+
+    doc.save(`mext-week-${weekData.weekNumber}.pdf`);
+    toast({ title: "PDF Downloaded!", description: `Week ${weekData.weekNumber} saved.` });
+  };
+
   return (
     <div className="min-h-screen bg-background">
-      {/* Hero gradient background */}
-      <div className="fixed inset-0 bg-gradient-to-br from-background via-background to-primary/5 pointer-events-none" />
-      <div className="fixed top-0 right-0 w-96 h-96 bg-primary/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="fixed bottom-0 left-0 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="fixed inset-0 bg-gradient-theme pointer-events-none" />
 
-      <div className="relative max-w-7xl mx-auto px-4 py-8">
+      <div className="relative max-w-7xl mx-auto px-4 py-6">
         {/* Header */}
-        <header className="text-center mb-8 fade-in">
+        <header className="text-center mb-6 fade-in">
           <div className="flex items-center justify-center gap-3 mb-2">
-            <Plane className="w-8 h-8 text-primary" />
-            <h1 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-primary via-purple-400 to-pink-400 bg-clip-text text-transparent">
-              MEXT Journey Planner
-            </h1>
-            <Sparkles className="w-6 h-6 text-yellow-400" />
+            <Plane className="w-7 h-7 text-primary" />
+            <h1 className="text-2xl sm:text-3xl font-bold text-gradient">MEXT Journey Tracker</h1>
+            <Sparkles className="w-5 h-5 text-accent" />
           </div>
-          <p className="text-muted-foreground">
-            Your Complete Roadmap to AI/ML Master's in Japan
-          </p>
-          <p className="text-sm text-muted-foreground mt-1">
-            December 2024 — April 2028 • {totalWeeks} Weeks
-          </p>
+          <p className="text-sm text-muted-foreground">Your Complete Roadmap to AI/ML Master's in Japan</p>
         </header>
 
         {/* Week selector */}
@@ -63,69 +102,64 @@ const Index = () => {
           overallProgress={overallProgress}
         />
 
-        {/* Main Content Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left column - Tasks */}
-          <div className="lg:col-span-2 space-y-6">
-            <CategorySection
+        {/* Main Layout */}
+        <div className="flex gap-6 mt-6">
+          <Sidebar
+            weekProgress={weekProgress}
+            monthProgress={weekProgress}
+            weeksCompleted={getWeeksCompleted()}
+            totalWeeks={totalWeeks}
+            streak={streak}
+            currentWeek={weekData}
+          />
+
+          {/* Main Content */}
+          <div className="flex-1 space-y-6">
+            <DailyTaskGrid
               title="Japanese Learning"
-              category="japanese"
+              icon={<BookOpen className="w-5 h-5" />}
               tasks={weekData.japanese}
-              completedTasks={completedTasks}
-              onToggleTask={(taskId) => toggleTask(currentWeek, taskId)}
+              category="japanese"
+              dailyTasks={dailyTasks}
+              onToggle={(taskId, dayIndex) => toggleDailyTask(currentWeek, taskId, dayIndex)}
             />
             
-            <CategorySection
+            <DailyTaskGrid
               title="AI/ML Work"
-              category="aiml"
+              icon={<Brain className="w-5 h-5" />}
               tasks={weekData.aiml}
-              completedTasks={completedTasks}
-              onToggleTask={(taskId) => toggleTask(currentWeek, taskId)}
+              category="aiml"
+              dailyTasks={dailyTasks}
+              onToggle={(taskId, dayIndex) => toggleDailyTask(currentWeek, taskId, dayIndex)}
             />
             
-            <CategorySection
+            <DailyTaskGrid
               title="College Work"
-              category="college"
+              icon={<GraduationCap className="w-5 h-5" />}
               tasks={weekData.college}
-              completedTasks={completedTasks}
-              onToggleTask={(taskId) => toggleTask(currentWeek, taskId)}
+              category="college"
+              dailyTasks={dailyTasks}
+              onToggle={(taskId, dayIndex) => toggleDailyTask(currentWeek, taskId, dayIndex)}
             />
             
-            <CategorySection
+            <DailyTaskGrid
               title="Weekly Goals"
-              category="goals"
+              icon={<Target className="w-5 h-5" />}
               tasks={weekData.goals}
-              completedTasks={completedTasks}
-              onToggleTask={(taskId) => toggleTask(currentWeek, taskId)}
+              category="goals"
+              dailyTasks={dailyTasks}
+              onToggle={(taskId, dayIndex) => toggleDailyTask(currentWeek, taskId, dayIndex)}
             />
-          </div>
 
-          {/* Right column - Dashboard */}
-          <div className="space-y-6">
-            <ProgressDashboard 
-              week={weekData}
-              completedTasks={completedTasks}
-              streak={streak}
-            />
-            
-            {weekData.resources && (
-              <ResourceLinks resources={weekData.resources} />
-            )}
-
-            {/* Motivational Quote */}
-            <div className="glass-card p-5 text-center">
-              <p className="text-sm italic text-muted-foreground mb-2">
-                "The journey of a thousand miles begins with a single step."
-              </p>
-              <p className="text-xs text-muted-foreground">— Lao Tzu</p>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <Notes notes={weekNotes} onSave={(n) => updateWeekNotes(currentWeek, n)} />
+              <WeekSummary week={weekData} dailyTasks={dailyTasks} streak={streak} onDownloadPDF={handleDownloadPDF} />
             </div>
           </div>
         </div>
 
-        {/* Footer */}
         <footer className="mt-12 text-center text-sm text-muted-foreground">
-          <p>Built with dedication for your MEXT scholarship journey</p>
-          <p className="mt-1">頑張って! (Ganbatte!) — Good luck!</p>
+          <p>頑張って! (Ganbatte!) — Good luck on your MEXT journey!</p>
         </footer>
       </div>
     </div>
