@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
-import { weeklyData, Task } from "@/data/weeklyData";
+import { weeklyData, Task, WeekData } from "@/data/weeklyData";
 
 const STORAGE_KEY = "mext-habit-tracker-v2";
 const STREAK_KEY = "mext-streak";
 const LAST_ACTIVITY_KEY = "mext-last-activity";
 const NOTES_KEY = "mext-notes";
+const CUSTOM_TASKS_KEY = "mext-custom-tasks";
 
 export interface DailyTasks {
   [taskId: string]: boolean[]; // Array of 7 booleans for each day
@@ -25,11 +26,22 @@ interface NotesData {
   [weekNumber: number]: WeekNotes;
 }
 
+interface CustomTasksData {
+  [weekNumber: number]: {
+    japanese: Task[];
+    aiml: Task[];
+    college: Task[];
+    goals: Task[];
+  };
+}
+
 export const useHabitTracker = () => {
   const [currentWeek, setCurrentWeek] = useState(1);
   const [dailyTasks, setDailyTasks] = useState<Record<number, DailyTasks>>({});
   const [notes, setNotes] = useState<NotesData>({});
   const [streak, setStreak] = useState(0);
+  const [customTasks, setCustomTasks] = useState<CustomTasksData>({});
+  const [removedTasks, setRemovedTasks] = useState<Record<number, string[]>>({});
 
   // Load data from localStorage
   useEffect(() => {
@@ -48,6 +60,17 @@ export const useHabitTracker = () => {
     if (storedNotes) {
       try {
         setNotes(JSON.parse(storedNotes));
+      } catch (e) {
+        console.error("Failed to parse notes:", e);
+      }
+    }
+
+    const storedCustomTasks = localStorage.getItem(CUSTOM_TASKS_KEY);
+    if (storedCustomTasks) {
+      try {
+        const parsed = JSON.parse(storedCustomTasks);
+        setCustomTasks(parsed.custom || {});
+        setRemovedTasks(parsed.removed || {});
       } catch (e) {
         console.error("Failed to parse notes:", e);
       }
@@ -83,6 +106,10 @@ export const useHabitTracker = () => {
   useEffect(() => {
     localStorage.setItem(NOTES_KEY, JSON.stringify(notes));
   }, [notes]);
+
+  useEffect(() => {
+    localStorage.setItem(CUSTOM_TASKS_KEY, JSON.stringify({ custom: customTasks, removed: removedTasks }));
+  }, [customTasks, removedTasks]);
 
   const toggleDailyTask = useCallback((weekNumber: number, taskId: string, dayIndex: number) => {
     setDailyTasks(prev => {
@@ -181,6 +208,56 @@ export const useHabitTracker = () => {
     return count;
   }, [dailyTasks]);
 
+  const addCustomTask = useCallback((weekNumber: number, category: string, task: Task) => {
+    setCustomTasks(prev => {
+      const weekCustom = prev[weekNumber] || { japanese: [], aiml: [], college: [], goals: [] };
+      const categoryTasks = [...(weekCustom[category as keyof typeof weekCustom] || [])];
+      categoryTasks.push(task);
+      return {
+        ...prev,
+        [weekNumber]: {
+          ...weekCustom,
+          [category]: categoryTasks
+        }
+      };
+    });
+  }, []);
+
+  const removeTask = useCallback((weekNumber: number, taskId: string) => {
+    setRemovedTasks(prev => {
+      const weekRemoved = prev[weekNumber] || [];
+      if (weekRemoved.includes(taskId)) return prev;
+      return {
+        ...prev,
+        [weekNumber]: [...weekRemoved, taskId]
+      };
+    });
+  }, []);
+
+  // Get week data with custom tasks and removed tasks applied
+  const getProcessedWeekData = useCallback((weekNumber: number): WeekData | undefined => {
+    const baseWeek = weeklyData[weekNumber - 1];
+    if (!baseWeek) return undefined;
+
+    const weekCustom = customTasks[weekNumber] || { japanese: [], aiml: [], college: [], goals: [] };
+    const weekRemoved = removedTasks[weekNumber] || [];
+
+    const filterTasks = (tasks: Task[], customAdditions: Task[]) => {
+      const filtered = tasks.filter(t => !weekRemoved.includes(t.id));
+      return [...filtered, ...customAdditions];
+    };
+
+    return {
+      ...baseWeek,
+      japanese: filterTasks(baseWeek.japanese, weekCustom.japanese),
+      aiml: filterTasks(baseWeek.aiml, weekCustom.aiml),
+      college: filterTasks(baseWeek.college, weekCustom.college),
+      goals: filterTasks(baseWeek.goals, weekCustom.goals),
+    };
+  }, [customTasks, removedTasks]);
+
+  const processedWeekData = getProcessedWeekData(currentWeek);
+
   return {
     currentWeek,
     setCurrentWeek,
@@ -191,9 +268,11 @@ export const useHabitTracker = () => {
     getWeekNotes,
     updateWeekNotes,
     getWeeksCompleted,
+    addCustomTask,
+    removeTask,
     streak,
     totalWeeks: weeklyData.length,
-    weekData: weeklyData[currentWeek - 1],
+    weekData: processedWeekData,
     allWeeks: weeklyData,
   };
 };
